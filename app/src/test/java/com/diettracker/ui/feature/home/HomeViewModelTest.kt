@@ -88,6 +88,8 @@ class HomeViewModelTest {
             deletedIds += id
         }
 
+        override suspend fun deleteOrphanedPhotos(): Int = 0
+
         override suspend fun hasSavedMeal(date: LocalDate, mealType: MealType): Boolean = false
     }
 }

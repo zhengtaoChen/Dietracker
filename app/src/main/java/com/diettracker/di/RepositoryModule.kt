@@ -5,12 +5,14 @@ import com.diettracker.data.repo.FavoriteMealRepositoryImpl
 import com.diettracker.data.repo.FoodRepositoryImpl
 import com.diettracker.data.repo.GoalRepositoryImpl
 import com.diettracker.data.repo.MealRepositoryImpl
+import com.diettracker.data.repo.PhotoRepositoryImpl
 import com.diettracker.data.repo.WeightRepositoryImpl
 import com.diettracker.domain.repository.DayCompletenessRepository
 import com.diettracker.domain.repository.FavoriteMealRepository
 import com.diettracker.domain.repository.FoodRepository
 import com.diettracker.domain.repository.GoalRepository
 import com.diettracker.domain.repository.MealRepository
+import com.diettracker.domain.repository.PhotoRepository
 import com.diettracker.domain.repository.WeightRepository
 import dagger.Binds
 import dagger.Module
@@ -26,6 +28,9 @@ abstract class RepositoryModule {
 
     @Binds
     abstract fun bindFoodRepository(impl: FoodRepositoryImpl): FoodRepository
+
+    @Binds
+    abstract fun bindPhotoRepository(impl: PhotoRepositoryImpl): PhotoRepository
 
     @Binds
     abstract fun bindWeightRepository(impl: WeightRepositoryImpl): WeightRepository

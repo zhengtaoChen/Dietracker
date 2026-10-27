@@ -39,7 +39,7 @@ class MealRepositoryInstrumentedTest {
     fun setUp() {
         context.deleteDatabase(dbName)
         db = InstrumentedTestDb.fileDb(context, dbName)
-        repo = MealRepositoryImpl(db, db.mealRecordDao(), db.foodItemDao())
+        repo = MealRepositoryImpl(db, db.mealRecordDao(), db.foodItemDao(), PhotoRepositoryImpl(context))
     }
 
     @After

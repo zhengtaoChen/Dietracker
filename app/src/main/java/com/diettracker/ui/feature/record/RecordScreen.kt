@@ -1,6 +1,9 @@
 package com.diettracker.ui.feature.record
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,9 +48,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.diettracker.data.local.db.entity.FoodDbEntity
@@ -56,11 +61,14 @@ import com.diettracker.domain.model.FoodSource
 import com.diettracker.domain.model.MealType
 import com.diettracker.domain.model.NutritionValues
 import com.diettracker.domain.model.RawCooked
+import com.diettracker.ui.components.PhotoThumbnail
 import com.diettracker.ui.util.Formatters
+import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneOffset
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,7 +99,30 @@ fun RecordScreen(
 
     var showDiscardDialog by remember { mutableStateOf(false) }
     var showModeDialog by remember { mutableStateOf(false) }
+    var showPhotoEntryDialog by remember { mutableStateOf(false) }
     var draftPendingDelete by remember { mutableStateOf<MealRecordEntity?>(null) }
+
+    val context = LocalContext.current
+    var captureTarget by remember { mutableStateOf<File?>(null) }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        val file = captureTarget
+        captureTarget = null
+        if (success && file != null) viewModel.onPhotoCaptured("photos/${file.name}")
+    }
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(viewModel::onPhotoPicked)
+    }
+    val launchCamera = {
+        val file = File(context.filesDir, "photos").apply { mkdirs() }
+            .let { dir -> File(dir, "${UUID.randomUUID()}.jpg") }
+        file.createNewFile()
+        captureTarget = file
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        takePicture.launch(uri)
+    }
+    val launchGallery = {
+        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
 
     LaunchedEffect(isDirty) { onDirtyChange(isDirty) }
 
@@ -130,6 +161,7 @@ fun RecordScreen(
             RecordViewModel.Step.ENTRIES -> RecordEntries(
                 drafts = drafts,
                 onTextClick = { showModeDialog = true },
+                onPhotoClick = { showPhotoEntryDialog = true },
                 onDraftClick = viewModel::openMeal,
                 onDraftDelete = { draftPendingDelete = it },
             )
@@ -146,6 +178,9 @@ fun RecordScreen(
                     onDateChange = viewModel::onDateChange,
                     onTimeChange = viewModel::onTimeChange,
                     onMealTypeChange = viewModel::onMealTypeChange,
+                    onCapturePhoto = launchCamera,
+                    onPickPhoto = launchGallery,
+                    onRemovePhoto = viewModel::removePhoto,
                     onBack = requestLeave,
                     onProceed = viewModel::proceedToConfirm,
                     onSaveDraft = viewModel::saveDraft,
@@ -164,6 +199,9 @@ fun RecordScreen(
                     onAddFood = viewModel::openFoodSearch,
                     onEditItem = viewModel::editItem,
                     onDeleteItem = viewModel::deleteItem,
+                    onCapturePhoto = launchCamera,
+                    onPickPhoto = launchGallery,
+                    onRemovePhoto = viewModel::removePhoto,
                     onBack = requestLeave,
                     onProceed = viewModel::proceedToConfirm,
                     onSaveDraft = viewModel::saveDraft,
@@ -224,6 +262,28 @@ fun RecordScreen(
         )
     }
 
+    if (showPhotoEntryDialog) {
+        AlertDialog(
+            onDismissRequest = { showPhotoEntryDialog = false },
+            title = { Text("拍照记录") },
+            text = { Text("拍摄或选择一张照片，随后可手动补充名称与热量。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPhotoEntryDialog = false
+                    viewModel.openQuickForm()
+                    launchCamera()
+                }) { Text("拍照") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPhotoEntryDialog = false
+                    viewModel.openQuickForm()
+                    launchGallery()
+                }) { Text("从相册选择") }
+            },
+        )
+    }
+
     val discardVisible = showDiscardDialog || pendingNavigation != null
     if (discardVisible) {
         AlertDialog(
@@ -271,6 +331,7 @@ fun RecordScreen(
 private fun RecordEntries(
     drafts: List<MealRecordEntity>,
     onTextClick: () -> Unit,
+    onPhotoClick: () -> Unit,
     onDraftClick: (String) -> Unit,
     onDraftDelete: (MealRecordEntity) -> Unit,
 ) {
@@ -298,9 +359,9 @@ private fun RecordEntries(
         Spacer(Modifier.height(12.dp))
         EntryCard(
             title = "拍照记录",
-            subtitle = "拍摄或选择照片识别（后续阶段实现）",
-            enabled = false,
-            onClick = {},
+            subtitle = "拍摄或选择照片，再手动补充名称与热量",
+            enabled = true,
+            onClick = onPhotoClick,
         )
         Spacer(Modifier.height(12.dp))
         EntryCard(
@@ -417,6 +478,9 @@ private fun QuickRecordForm(
     onDateChange: (LocalDate) -> Unit,
     onTimeChange: (LocalTime) -> Unit,
     onMealTypeChange: (MealType) -> Unit,
+    onCapturePhoto: () -> Unit,
+    onPickPhoto: () -> Unit,
+    onRemovePhoto: () -> Unit,
     onBack: () -> Unit,
     onProceed: () -> Unit,
     onSaveDraft: () -> Unit,
@@ -464,7 +528,15 @@ private fun QuickRecordForm(
                 onShowDatePicker = { showDatePicker = true },
                 onShowTimePicker = { showTimePicker = true },
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
+
+            PhotoSection(
+                photoUri = form.photoUri,
+                onCapture = onCapturePhoto,
+                onPick = onPickPhoto,
+                onRemove = onRemovePhoto,
+            )
+            Spacer(Modifier.height(16.dp))
 
             Text(
                 "营养素（可选，未填写视为未知）",
@@ -583,6 +655,9 @@ private fun DetailRecordForm(
     onAddFood: () -> Unit,
     onEditItem: (String) -> Unit,
     onDeleteItem: (String) -> Unit,
+    onCapturePhoto: () -> Unit,
+    onPickPhoto: () -> Unit,
+    onRemovePhoto: () -> Unit,
     onBack: () -> Unit,
     onProceed: () -> Unit,
     onSaveDraft: () -> Unit,
@@ -620,6 +695,14 @@ private fun DetailRecordForm(
                 time = form.time,
                 onShowDatePicker = { showDatePicker = true },
                 onShowTimePicker = { showTimePicker = true },
+            )
+            Spacer(Modifier.height(16.dp))
+
+            PhotoSection(
+                photoUri = form.photoUri,
+                onCapture = onCapturePhoto,
+                onPick = onPickPhoto,
+                onRemove = onRemovePhoto,
             )
             Spacer(Modifier.height(16.dp))
 
@@ -1087,6 +1170,16 @@ private fun ConfirmRecord(
         ) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    if (form.photoUri != null) {
+                        PhotoThumbnail(
+                            relativePath = form.photoUri,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp),
+                            contentDescription = "餐次照片",
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                     if (mode == RecordViewModel.InputMode.QUICK) {
                         DetailRow("名称", form.name.trim().ifBlank { "—" })
                         DetailRow("餐次类型", Formatters.mealTypeLabel(form.mealType))
@@ -1229,6 +1322,62 @@ private fun DetailRow(label: String, value: String) {
             text = value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+private fun PhotoSection(
+    photoUri: String?,
+    onCapture: () -> Unit,
+    onPick: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    var showChooser by remember { mutableStateOf(false) }
+    Column {
+        Text(
+            "照片（可选）",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        if (photoUri != null) {
+            PhotoThumbnail(
+                relativePath = photoUri,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
+                contentDescription = "餐次照片",
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { showChooser = true }) { Text("更换") }
+                OutlinedButton(onClick = onRemove) { Text("移除") }
+            }
+        } else {
+            OutlinedButton(onClick = { showChooser = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("添加照片")
+            }
+        }
+    }
+
+    if (showChooser) {
+        AlertDialog(
+            onDismissRequest = { showChooser = false },
+            title = { Text("选择照片") },
+            text = { Text("拍照或从相册选择一张照片。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showChooser = false
+                    onCapture()
+                }) { Text("拍照") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showChooser = false
+                    onPick()
+                }) { Text("从相册选择") }
+            },
         )
     }
 }

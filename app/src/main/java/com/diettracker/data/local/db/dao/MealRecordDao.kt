@@ -22,6 +22,10 @@ interface MealRecordDao {
     @Query("SELECT * FROM meal_records WHERE id = :id")
     suspend fun getById(id: String): MealRecordEntity?
 
+    /** 全部已引用照片的相对路径（含草稿），用于无主文件清理。 */
+    @Query("SELECT photoUri FROM meal_records WHERE photoUri IS NOT NULL")
+    suspend fun getAllPhotoUris(): List<String>
+
     /** 仅已保存记录（统计用），按时间排序。 */
     @Query("SELECT * FROM meal_records WHERE date = :date AND status = 'SAVED' ORDER BY time ASC, createdAt ASC")
     fun observeSavedByDate(date: LocalDate): Flow<List<MealRecordEntity>>

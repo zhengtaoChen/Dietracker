@@ -1,5 +1,6 @@
 package com.diettracker.ui.feature.record
 
+import android.net.Uri
 import com.diettracker.data.local.db.entity.FoodDbEntity
 import com.diettracker.data.local.db.entity.FoodItemEntity
 import com.diettracker.data.local.db.entity.MealRecordEntity
@@ -14,6 +15,8 @@ import com.diettracker.domain.model.RecordSource
 import com.diettracker.domain.model.RecordStatus
 import com.diettracker.domain.repository.FoodRepository
 import com.diettracker.domain.repository.MealRepository
+import com.diettracker.domain.repository.PhotoRepository
+import java.io.File
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,6 +34,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * RecordViewModel 单元测试：验证草稿恢复、正式保存/重存复用 UUID、保留 createdAt、失败保留表单，
@@ -39,6 +45,8 @@ import org.junit.Test
  * 使用 UnconfinedTestDispatcher 作为 Main 调度器，使 viewModelScope 协程同步执行，便于断言。
  */
 @OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class RecordViewModelTest {
 
     private val dispatcher = UnconfinedTestDispatcher()
@@ -60,7 +68,7 @@ class RecordViewModelTest {
         val repo = FakeMealRepository().apply {
             meals["d1"] = entity(id = "d1", name = "牛肉面", calories = 850f, status = RecordStatus.DRAFT, createdAt = 100L)
         }
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
 
         vm.openMeal("d1")
 
@@ -73,7 +81,7 @@ class RecordViewModelTest {
     @Test
     fun `保存新草稿写入DRAFT并重置`() = runTest {
         val repo = FakeMealRepository()
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
         vm.openQuickForm()
         vm.onNameChange("早餐")
 
@@ -93,7 +101,7 @@ class RecordViewModelTest {
         val repo = FakeMealRepository().apply {
             meals["d1"] = entity(id = "d1", name = "午餐", calories = 850f, status = RecordStatus.DRAFT, createdAt = 100L)
         }
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
         vm.openMeal("d1")
         vm.onCaloriesChange("900")
 
@@ -113,7 +121,7 @@ class RecordViewModelTest {
         val repo = FakeMealRepository().apply {
             meals["d1"] = entity(id = "d1", name = "午餐", calories = null, status = RecordStatus.DRAFT, createdAt = 100L)
         }
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
         vm.openMeal("d1")
         vm.onNoteChange("加辣")
 
@@ -130,7 +138,7 @@ class RecordViewModelTest {
     @Test
     fun `保存失败保留表单并保留脏标记`() = runTest {
         val repo = FakeMealRepository().apply { saveError = RuntimeException("boom") }
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
         vm.openQuickForm()
         vm.onNameChange("午餐")
         vm.onCaloriesChange("850")
@@ -150,7 +158,7 @@ class RecordViewModelTest {
         val repo = FakeMealRepository().apply {
             meals["d1"] = entity(id = "d1", name = "草稿", status = RecordStatus.DRAFT)
         }
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
 
         vm.deleteDraft("d1")
 
@@ -161,7 +169,7 @@ class RecordViewModelTest {
 
     @Test
     fun `详细模式手动新增食物明细`() = runTest {
-        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository())
+        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository(), FakePhotoRepository())
         vm.openDetailForm()
         vm.startManualFood()
         vm.onEditorNameChange("牛肉")
@@ -181,7 +189,7 @@ class RecordViewModelTest {
         val foodRepo = FakeFoodRepository().apply {
             foods["f1"] = food(id = "f1", name = "米饭", kcal = 130f, protein = 2.7f, carbs = 28.2f, fat = 0.3f, version = 3)
         }
-        val vm = RecordViewModel(FakeMealRepository(), foodRepo)
+        val vm = RecordViewModel(FakeMealRepository(), foodRepo, FakePhotoRepository())
         vm.openDetailForm()
         vm.openFoodSearch()
         vm.selectFood(foodRepo.foods["f1"]!!)
@@ -200,7 +208,7 @@ class RecordViewModelTest {
 
     @Test
     fun `删除食物后明细合计重新计算`() = runTest {
-        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository())
+        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository(), FakePhotoRepository())
         vm.openDetailForm()
         // 第一条：热量 100
         vm.startManualFood()
@@ -224,7 +232,7 @@ class RecordViewModelTest {
     @Test
     fun `详细模式手动覆盖总热量优先且保存明细`() = runTest {
         val repo = FakeMealRepository()
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
         vm.openDetailForm()
         vm.startManualFood()
         vm.onEditorNameChange("牛肉面")
@@ -244,7 +252,7 @@ class RecordViewModelTest {
     @Test
     fun `详细模式缺失营养保持null而非0`() = runTest {
         val repo = FakeMealRepository()
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
         vm.openDetailForm()
         vm.startManualFood()
         vm.onEditorNameChange("某食物")
@@ -274,7 +282,7 @@ class RecordViewModelTest {
                 ),
             )
         }
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
 
         vm.openMeal("d1")
 
@@ -286,7 +294,7 @@ class RecordViewModelTest {
 
     @Test
     fun `详细模式无食物时不能进入确认页`() = runTest {
-        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository())
+        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository(), FakePhotoRepository())
         vm.openDetailForm()
         vm.proceedToConfirm()
 
@@ -299,7 +307,7 @@ class RecordViewModelTest {
         val foodRepo = FakeFoodRepository().apply {
             foods["f1"] = food(id = "f1", name = "米饭", kcal = 130f)
         }
-        val vm = RecordViewModel(FakeMealRepository(), foodRepo)
+        val vm = RecordViewModel(FakeMealRepository(), foodRepo, FakePhotoRepository())
         vm.openDetailForm()
         vm.selectFood(foodRepo.foods["f1"]!!)
         vm.onEditorGramsChange("0")
@@ -316,7 +324,7 @@ class RecordViewModelTest {
         val repo = FakeMealRepository().apply {
             meals["m1"] = entity(id = "m1", name = "午餐", calories = 850f, status = RecordStatus.SAVED, createdAt = 100L)
         }
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
         vm.openMeal("m1")
         vm.onCaloriesChange("750")
 
@@ -348,7 +356,7 @@ class RecordViewModelTest {
                 ),
             )
         }
-        val vm = RecordViewModel(repo, foodRepo)
+        val vm = RecordViewModel(repo, foodRepo, FakePhotoRepository())
         vm.openMeal("m1")
 
         assertEquals(RecordViewModel.InputMode.DETAIL, vm.mode.value)
@@ -373,7 +381,7 @@ class RecordViewModelTest {
         val repo = FakeMealRepository().apply {
             meals["m1"] = entity(id = "m1", name = "午餐", calories = 850f, status = RecordStatus.SAVED, createdAt = 100L)
         }
-        val vm = RecordViewModel(repo, FakeFoodRepository())
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
         vm.openMeal("m1")
         vm.onCaloriesChange("999")
 
@@ -383,6 +391,110 @@ class RecordViewModelTest {
         assertEquals(850f, unchanged.totalCaloriesOverride)
         assertEquals(100L, unchanged.createdAt)
         assertEquals(RecordStatus.SAVED, unchanged.status)
+    }
+
+    // ---- 阶段 2C：照片 ----
+
+    @Test
+    fun `拍照后保存记录含照片路径`() = runTest {
+        val repo = FakeMealRepository()
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
+        vm.openQuickForm()
+        vm.onNameChange("午餐")
+        vm.onCaloriesChange("850")
+        vm.onPhotoCaptured("photos/cap.jpg")
+        vm.proceedToConfirm()
+        vm.save()
+
+        assertEquals("photos/cap.jpg", repo.meals.values.first().photoUri)
+    }
+
+    @Test
+    fun `相册选图保存到私有目录并挂到表单`() = runTest {
+        val photoRepo = FakePhotoRepository()
+        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository(), photoRepo)
+        vm.openQuickForm()
+        vm.onPhotoPicked(Uri.parse("content://test/1"))
+
+        assertEquals("photos/fake_1.jpg", vm.form.value.photoUri)
+    }
+
+    @Test
+    fun `移除照片删除本次会话文件`() = runTest {
+        val photoRepo = FakePhotoRepository()
+        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository(), photoRepo)
+        vm.openQuickForm()
+        vm.onPhotoCaptured("photos/new.jpg")
+        vm.removePhoto()
+
+        assertNull(vm.form.value.photoUri)
+        assertTrue(photoRepo.deleted.contains("photos/new.jpg"))
+    }
+
+    @Test
+    fun `更换照片删除旧的未保存文件`() = runTest {
+        val photoRepo = FakePhotoRepository()
+        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository(), photoRepo)
+        vm.openQuickForm()
+        vm.onPhotoCaptured("photos/first.jpg")
+        vm.onPhotoCaptured("photos/second.jpg")
+
+        assertEquals("photos/second.jpg", vm.form.value.photoUri)
+        assertTrue(photoRepo.deleted.contains("photos/first.jpg"))
+    }
+
+    @Test
+    fun `编辑餐次更换照片保存后清理旧照片`() = runTest {
+        val repo = FakeMealRepository().apply {
+            meals["m1"] = entity(id = "m1", name = "午餐", calories = 850f, status = RecordStatus.SAVED, createdAt = 100L)
+                .copy(photoUri = "photos/old.jpg")
+        }
+        val photoRepo = FakePhotoRepository()
+        val vm = RecordViewModel(repo, FakeFoodRepository(), photoRepo)
+        vm.openMeal("m1")
+        vm.onPhotoCaptured("photos/new.jpg")
+        vm.save()
+
+        assertEquals("photos/new.jpg", repo.meals["m1"]!!.photoUri)
+        assertTrue(photoRepo.deleted.contains("photos/old.jpg"))
+        assertFalse(photoRepo.deleted.contains("photos/new.jpg"))
+    }
+
+    @Test
+    fun `丢弃表单删除未保存照片`() = runTest {
+        val photoRepo = FakePhotoRepository()
+        val vm = RecordViewModel(FakeMealRepository(), FakeFoodRepository(), photoRepo)
+        vm.openQuickForm()
+        vm.onPhotoCaptured("photos/new.jpg")
+        vm.backToEntries()
+
+        assertTrue(photoRepo.deleted.contains("photos/new.jpg"))
+        assertEquals(RecordViewModel.Step.ENTRIES, vm.step.value)
+    }
+
+    @Test
+    fun `草稿保留照片路径`() = runTest {
+        val repo = FakeMealRepository()
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
+        vm.openQuickForm()
+        vm.onNameChange("午餐")
+        vm.onPhotoCaptured("photos/draft.jpg")
+        vm.saveDraft()
+
+        assertEquals("photos/draft.jpg", repo.meals.values.first().photoUri)
+        assertEquals(RecordStatus.DRAFT, repo.meals.values.first().status)
+    }
+
+    @Test
+    fun `打开带照片草稿恢复照片`() = runTest {
+        val repo = FakeMealRepository().apply {
+            meals["d1"] = entity(id = "d1", name = "午餐", calories = 850f, status = RecordStatus.DRAFT, createdAt = 100L)
+                .copy(photoUri = "photos/draft.jpg")
+        }
+        val vm = RecordViewModel(repo, FakeFoodRepository(), FakePhotoRepository())
+        vm.openMeal("d1")
+
+        assertEquals("photos/draft.jpg", vm.form.value.photoUri)
     }
 
     // ---- 工厂 ----
@@ -472,6 +584,8 @@ class RecordViewModelTest {
             itemsByMeal.remove(id)
         }
 
+        override suspend fun deleteOrphanedPhotos(): Int = 0
+
         override suspend fun hasSavedMeal(date: LocalDate, mealType: MealType): Boolean =
             meals.values.any { it.status == RecordStatus.SAVED && it.date == date && it.mealType == mealType }
     }
@@ -496,5 +610,20 @@ class RecordViewModelTest {
             foods[foodId]?.let { NutritionCalculator.computeFromFood(it, grams) }
 
         override suspend fun foodCount(): Int = foods.size
+    }
+
+    private class FakePhotoRepository : PhotoRepository {
+        val deleted = mutableListOf<String>()
+        private var counter = 0
+
+        override suspend fun savePhoto(uri: Uri): String = "photos/fake_${++counter}.jpg"
+
+        override fun deletePhoto(relativePath: String) {
+            deleted += relativePath
+        }
+
+        override fun resolve(relativePath: String): File = File(relativePath)
+
+        override fun listPhotos(): List<String> = emptyList()
     }
 }

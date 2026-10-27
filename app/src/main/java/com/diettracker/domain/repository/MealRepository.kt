@@ -30,6 +30,9 @@ interface MealRepository {
 
     suspend fun deleteMeal(id: String)
 
+    /** 删除未被任何记录引用的照片文件，返回删除数量。 */
+    suspend fun deleteOrphanedPhotos(): Int
+
     /** 某日某餐次是否已有已保存记录（提醒跳过判断用）。 */
     suspend fun hasSavedMeal(date: LocalDate, mealType: MealType): Boolean
 }

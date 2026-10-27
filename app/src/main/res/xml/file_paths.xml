@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 照片存放在 filesDir/photos/，通过 FileProvider 供相机写入。 -->
+    <files-path
+        name="photos"
+        path="photos/" />
+</paths>

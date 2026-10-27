@@ -11,6 +11,7 @@ import com.diettracker.domain.model.MealType
 import com.diettracker.domain.model.NutritionCalculator
 import com.diettracker.domain.model.NutritionSummary
 import com.diettracker.domain.repository.MealRepository
+import com.diettracker.domain.repository.PhotoRepository
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +23,7 @@ class MealRepositoryImpl @Inject constructor(
     private val database: AppDatabase,
     private val mealRecordDao: MealRecordDao,
     private val foodItemDao: FoodItemDao,
+    private val photoRepository: PhotoRepository,
 ) : MealRepository {
 
     override fun observeSavedMeals(date: LocalDate): Flow<List<MealRecordEntity>> =
@@ -52,9 +54,21 @@ class MealRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteMeal(id: String) {
+        val meal = mealRecordDao.getById(id)
         database.withTransaction {
             foodItemDao.deleteByMeal(id)
             mealRecordDao.deleteById(id)
+        }
+        meal?.photoUri?.let { photoRepository.deletePhoto(it) }
+    }
+
+    override suspend fun deleteOrphanedPhotos(): Int {
+        val referenced = mealRecordDao.getAllPhotoUris().toSet()
+        return photoRepository.listPhotos().count { relativePath ->
+            if (relativePath in referenced) false else {
+                photoRepository.deletePhoto(relativePath)
+                true
+            }
         }
     }
 

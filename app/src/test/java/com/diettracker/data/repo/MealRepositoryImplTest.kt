@@ -11,12 +11,14 @@ import com.diettracker.domain.model.RawCooked
 import com.diettracker.domain.model.RecordSource
 import com.diettracker.domain.model.RecordStatus
 import com.diettracker.testutil.TestDb
+import java.io.File
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -31,14 +33,17 @@ class MealRepositoryImplTest {
 
     private lateinit var db: com.diettracker.data.local.db.AppDatabase
     private lateinit var repo: MealRepositoryImpl
+    private lateinit var photoRepo: PhotoRepositoryImpl
+    private lateinit var context: Context
 
     private val date = LocalDate.of(2026, 1, 1)
 
     @Before
     fun setUp() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
+        context = ApplicationProvider.getApplicationContext<Context>()
         db = TestDb.inMemory(context)
-        repo = MealRepositoryImpl(db, db.mealRecordDao(), db.foodItemDao())
+        photoRepo = PhotoRepositoryImpl(context)
+        repo = MealRepositoryImpl(db, db.mealRecordDao(), db.foodItemDao(), photoRepo)
     }
 
     @After
@@ -120,6 +125,35 @@ class MealRepositoryImplTest {
         assertTrue(db.foodItemDao().getByMeal(mealA.id).isEmpty())
         assertEquals(1, db.foodItemDao().getByMeal(mealB.id).size)
         assertEquals(300f, repo.getMealWithItems(mealB.id)?.items?.firstOrNull()?.calories)
+    }
+
+    @Test
+    fun `删除餐次连带删除照片文件`() = runBlocking {
+        val dir = File(context.filesDir, "photos").apply { mkdirs() }
+        val file = File(dir, "test.jpg").apply { writeText("x") }
+
+        val meal = meal(status = RecordStatus.SAVED, override = 500f).copy(photoUri = "photos/test.jpg")
+        repo.saveMeal(meal, emptyList())
+
+        repo.deleteMeal(meal.id)
+
+        assertFalse(file.exists())
+    }
+
+    @Test
+    fun `清理无主照片且不删被引用的照片`() = runBlocking {
+        val dir = File(context.filesDir, "photos").apply { mkdirs() }
+        val referenced = File(dir, "keep.jpg").apply { writeText("k") }
+        val orphan = File(dir, "drop.jpg").apply { writeText("o") }
+
+        val meal = meal(status = RecordStatus.SAVED, override = 500f).copy(photoUri = "photos/keep.jpg")
+        repo.saveMeal(meal, emptyList())
+
+        val removed = repo.deleteOrphanedPhotos()
+
+        assertEquals(1, removed)
+        assertTrue(referenced.exists())
+        assertFalse(orphan.exists())
     }
 
     private fun meal(status: RecordStatus, override: Float?): MealRecordEntity =

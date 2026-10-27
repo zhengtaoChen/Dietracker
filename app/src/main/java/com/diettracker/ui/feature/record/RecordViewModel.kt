@@ -1,5 +1,6 @@
 package com.diettracker.ui.feature.record
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.diettracker.data.local.db.entity.FoodDbEntity
@@ -14,6 +15,7 @@ import com.diettracker.domain.model.RecordSource
 import com.diettracker.domain.model.RecordStatus
 import com.diettracker.domain.repository.FoodRepository
 import com.diettracker.domain.repository.MealRepository
+import com.diettracker.domain.repository.PhotoRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
 import java.time.LocalTime
@@ -99,11 +101,13 @@ data class MealFormState(
     val time: LocalTime = LocalTime.now(),
     val mealType: MealType = MealType.LUNCH,
     val note: String = "",
+    val photoUri: String? = null,
     val items: List<FoodItemDraft> = emptyList(),
 ) {
     /** 是否有任何已填内容（用于草稿门槛）。 */
     val hasContent: Boolean
-        get() = listOf(name, calories, protein, carbs, fat, note).any { it.isNotBlank() } || items.isNotEmpty()
+        get() = listOf(name, calories, protein, carbs, fat, note).any { it.isNotBlank() } ||
+            photoUri != null || items.isNotEmpty()
 
     val isCaloriesValid: Boolean
         get() = parsePositive(calories) != null
@@ -127,6 +131,7 @@ sealed interface RecordEvent {
 class RecordViewModel @Inject constructor(
     private val mealRepository: MealRepository,
     private val foodRepository: FoodRepository,
+    private val photoRepository: PhotoRepository,
 ) : ViewModel() {
 
     enum class Step { ENTRIES, FORM, CONFIRM, FOOD_SEARCH, FOOD_EDIT }
@@ -213,6 +218,9 @@ class RecordViewModel @Inject constructor(
     /** 正在编辑记录的原始 createdAt，正式保存/重存时保留。 */
     private var editingCreatedAt: Long? = null
 
+    /** 正在编辑记录在库中已有的照片路径，用于区分「本次新增」与「已落库」照片。 */
+    private var editingOriginalPhotoUri: String? = null
+
     fun openQuickForm() = resetForm(InputMode.QUICK)
 
     fun openDetailForm() = resetForm(InputMode.DETAIL)
@@ -224,6 +232,7 @@ class RecordViewModel @Inject constructor(
         _isDirty.value = false
         editingId = null
         editingCreatedAt = null
+        editingOriginalPhotoUri = null
         clearEditor()
         _step.value = Step.FORM
     }
@@ -234,6 +243,7 @@ class RecordViewModel @Inject constructor(
             val entity = withItems.meal
             editingId = id
             editingCreatedAt = entity.createdAt
+            editingOriginalPhotoUri = entity.photoUri
             _mode.value = if (withItems.items.isEmpty()) InputMode.QUICK else InputMode.DETAIL
             _form.value = entity.toFormState(withItems.items)
             _formError.value = null
@@ -255,14 +265,64 @@ class RecordViewModel @Inject constructor(
 
     /** 放弃当前编辑并回到入口页（清空表单，避免残留内容）。 */
     fun backToEntries() {
+        discardSessionPhoto()
         _form.value = MealFormState()
         _formError.value = null
         _isDirty.value = false
         editingId = null
         editingCreatedAt = null
+        editingOriginalPhotoUri = null
         _mode.value = InputMode.QUICK
         clearEditor()
         _step.value = Step.ENTRIES
+    }
+
+    // ---- 照片 ----
+
+    /** 相册选图：复制到私有目录后挂到表单。 */
+    fun onPhotoPicked(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val path = photoRepository.savePhoto(uri)
+                attachPhoto(path)
+            } catch (e: Exception) {
+                _events.tryEmit(RecordEvent.Error("照片保存失败：${e.message ?: "未知错误"}"))
+            }
+        }
+    }
+
+    /** 相机拍照：文件已由相机写入私有目录，直接挂到表单。 */
+    fun onPhotoCaptured(relativePath: String) {
+        attachPhoto(relativePath)
+    }
+
+    /** 移除当前照片（本次新增的立即删除文件；已落库的保留，保存后再清理）。 */
+    fun removePhoto() {
+        val current = _form.value.photoUri
+        if (current != null && current != editingOriginalPhotoUri) {
+            photoRepository.deletePhoto(current)
+        }
+        _form.value = _form.value.copy(photoUri = null)
+        _formError.value = null
+        _isDirty.value = true
+    }
+
+    private fun attachPhoto(path: String) {
+        val current = _form.value.photoUri
+        // 更换照片时，若旧照片是本次会话新增（未落库）则删除，避免残留。
+        if (current != null && current != editingOriginalPhotoUri && current != path) {
+            photoRepository.deletePhoto(current)
+        }
+        _form.value = _form.value.copy(photoUri = path)
+        _formError.value = null
+        _isDirty.value = true
+    }
+
+    private fun discardSessionPhoto() {
+        val current = _form.value.photoUri
+        if (current != null && current != editingOriginalPhotoUri) {
+            photoRepository.deletePhoto(current)
+        }
     }
 
     fun proceedToConfirm() {
@@ -508,6 +568,7 @@ class RecordViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 mealRepository.saveMeal(built.meal, built.items)
+                cleanupReplacedPhoto(built.meal.photoUri)
                 resetAfterSave()
                 _events.tryEmit(RecordEvent.Saved)
             } catch (e: Exception) {
@@ -526,6 +587,7 @@ class RecordViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 mealRepository.saveMeal(built.meal, built.items)
+                cleanupReplacedPhoto(built.meal.photoUri)
                 resetAfterSave()
                 _events.tryEmit(RecordEvent.DraftSaved)
             } catch (e: Exception) {
@@ -536,12 +598,21 @@ class RecordViewModel @Inject constructor(
         }
     }
 
+    /** 编辑既有记录并更换了照片时，保存成功后删除已落库的旧照片文件。 */
+    private fun cleanupReplacedPhoto(newPhotoUri: String?) {
+        val old = editingOriginalPhotoUri
+        if (old != null && old != newPhotoUri) {
+            photoRepository.deletePhoto(old)
+        }
+    }
+
     private fun resetAfterSave() {
         _form.value = MealFormState()
         _formError.value = null
         _isDirty.value = false
         editingId = null
         editingCreatedAt = null
+        editingOriginalPhotoUri = null
         _mode.value = InputMode.QUICK
         clearEditor()
         _step.value = Step.ENTRIES
@@ -567,7 +638,7 @@ class RecordViewModel @Inject constructor(
                         name = name,
                         time = state.time,
                         note = state.note.trim().ifBlank { null },
-                        photoUri = null,
+                        photoUri = state.photoUri,
                         totalCaloriesOverride = calories,
                         proteinOverride = parseNonNegative(state.protein),
                         carbsOverride = parseNonNegative(state.carbs),
@@ -590,7 +661,7 @@ class RecordViewModel @Inject constructor(
                         name = state.name.trim().ifBlank { null },
                         time = state.time,
                         note = state.note.trim().ifBlank { null },
-                        photoUri = null,
+                        photoUri = state.photoUri,
                         totalCaloriesOverride = parsePositive(state.calories),
                         proteinOverride = null,
                         carbsOverride = null,
@@ -616,6 +687,7 @@ class RecordViewModel @Inject constructor(
         time = time ?: LocalTime.now(),
         mealType = mealType,
         note = note.orEmpty(),
+        photoUri = photoUri,
         items = items.map { it.toDraft() },
     )
 
