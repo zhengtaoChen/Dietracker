@@ -58,6 +58,20 @@ class FoodDbDaoTest {
     }
 
     @Test
+    fun `按分类搜索命中`() = runBlocking {
+        dao.insertAll(
+            listOf(
+                food("f1", "米饭", "主食", ""),
+                food("f2", "鸡胸肉", "肉类", ""),
+            ),
+        )
+
+        val result = dao.search("主食").first()
+        assertEquals(1, result.size)
+        assertEquals("米饭", result[0].name)
+    }
+
+    @Test
     fun `insertAll 后 count 正确`() = runBlocking {
         dao.insertAll(
             listOf(food("f1", "米饭", "主食", ""), food("f2", "鸡胸肉", "肉类", "")),

@@ -6,16 +6,20 @@ import com.diettracker.domain.model.RawCooked
 /**
  * 内置示例食物种子数据。
  *
- * 数据来源：USDA FoodData Central（美国农业部食物数据中心，公有领域，可合法使用、可追溯）。
- * 数值为每 100g 的近似值（保留 1 位小数）。本阶段仅提供少量示例，用于打通
- * 「搜索 → 按克折算营养」流程；正式生产前需对照 USDA FDC 原始条目逐条校验，
- * 并补齐精确的外部条目 ID（sourceId），再按 PRD 建议扩充至 150–300 种。
+ * 数值为每 100g 的 USDA FoodData Central 常见参考值（公有领域，可合法使用）。
+ * 本阶段仅提供 12 条示例，用于打通「搜索 → 按克折算营养」流程；正式生产前需
+ * 对照 USDA FDC 官方原始条目逐条核验，并补齐精确的外部条目 ID（sourceId），
+ * 再按 PRD 建议扩充至 150–300 种。
  *
- * 未编造未经核实的营养数据；若对某条目数值存疑，应以 USDA FDC 官方条目为准。
+ * 诚实性约束（PRD §5.1「来源与版本」）：
+ * - [sourceId] 一律为 null——现阶段未核验官方 FDC 条目 ID，不能用占位字符串
+ *   冒充真实的外部条目标识。
+ * - 数值为近似参考值；「北豆腐（硬）」为中式豆制品，无单一 USDA FDC 条目直接对应，
+ *   其数值为常见参考值（见技术文档「阶段 2B」来源核验说明），不视为精确测量值。
  */
 object FoodSeedData {
 
-    const val SOURCE = "USDA FoodData Central（公有领域）"
+    const val SOURCE = "USDA FoodData Central 常见参考值（示例，待核对官方 FDC 条目 ID）"
     const val VERSION = 1
 
     fun all(): List<FoodDbEntity> = listOf(
@@ -54,7 +58,7 @@ object FoodSeedData {
         fatPer100g = fat,
         rawCooked = rawCooked,
         source = SOURCE,
-        sourceId = "usda-fdc:$id",
+        sourceId = null,
         version = VERSION,
         isCustom = false,
         isFavorite = false,

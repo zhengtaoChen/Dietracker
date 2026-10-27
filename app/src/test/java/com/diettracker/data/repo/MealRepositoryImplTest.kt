@@ -2,10 +2,12 @@ package com.diettracker.data.repo
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.diettracker.data.local.db.entity.FoodDbEntity
 import com.diettracker.data.local.db.entity.FoodItemEntity
 import com.diettracker.data.local.db.entity.MealRecordEntity
 import com.diettracker.domain.model.FoodSource
 import com.diettracker.domain.model.MealType
+import com.diettracker.domain.model.RawCooked
 import com.diettracker.domain.model.RecordSource
 import com.diettracker.domain.model.RecordStatus
 import com.diettracker.testutil.TestDb
@@ -88,6 +90,23 @@ class MealRepositoryImplTest {
         assertEquals(50f, withItems?.items?.firstOrNull()?.calories)
     }
 
+    @Test
+    fun `营养快照不随本地库更新改变`() = runBlocking {
+        // 食物 v1：每 100g 130 kcal
+        db.foodDbDao().insertAll(listOf(food(id = "f1", kcal = 130f, version = 1)))
+
+        val meal = meal(status = RecordStatus.SAVED, override = null)
+        repo.saveMeal(meal, listOf(item(meal.id, calories = 130f, foodDbId = "f1", foodDbVersion = 1)))
+
+        // 本地库更新为 v2：200 kcal
+        db.foodDbDao().upsert(food(id = "f1", kcal = 200f, version = 2))
+
+        val withItems = repo.getMealWithItems(meal.id)
+        val savedItem = withItems?.items?.firstOrNull()
+        assertEquals(130f, savedItem?.calories)
+        assertEquals(1, savedItem?.foodDbVersion)
+    }
+
     private fun meal(status: RecordStatus, override: Float?): MealRecordEntity =
         MealRecordEntity(
             id = UUID.randomUUID().toString(),
@@ -113,6 +132,8 @@ class MealRepositoryImplTest {
         protein: Float? = null,
         carbs: Float? = null,
         fat: Float? = null,
+        foodDbId: String? = null,
+        foodDbVersion: Int? = null,
     ): FoodItemEntity = FoodItemEntity(
         id = UUID.randomUUID().toString(),
         mealRecordId = mealRecordId,
@@ -126,7 +147,25 @@ class MealRepositoryImplTest {
         carbs = carbs,
         fat = fat,
         source = FoodSource.LOCAL_DB,
-        foodDbId = null,
-        foodDbVersion = null,
+        foodDbId = foodDbId,
+        foodDbVersion = foodDbVersion,
+    )
+
+    private fun food(id: String, kcal: Float, version: Int): FoodDbEntity = FoodDbEntity(
+        id = id,
+        name = "米饭",
+        category = "主食",
+        aliases = "",
+        kcalPer100g = kcal,
+        proteinPer100g = 2.7f,
+        carbsPer100g = 28.2f,
+        fatPer100g = 0.3f,
+        rawCooked = RawCooked.COOKED,
+        source = "test",
+        sourceId = null,
+        version = version,
+        isCustom = false,
+        isFavorite = false,
+        createdAt = 0L,
     )
 }

@@ -22,7 +22,9 @@ interface FoodDbDao {
 
     @Query(
         "SELECT * FROM food_db " +
-            "WHERE name LIKE '%' || :query || '%' OR aliases LIKE '%' || :query || '%' " +
+            "WHERE name LIKE '%' || :query || '%' " +
+            "OR aliases LIKE '%' || :query || '%' " +
+            "OR category LIKE '%' || :query || '%' " +
             "ORDER BY isFavorite DESC, name ASC LIMIT :limit",
     )
     fun search(query: String, limit: Int = 50): Flow<List<FoodDbEntity>>
