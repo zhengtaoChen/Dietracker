@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -53,15 +54,7 @@ fun DietTrackerApp() {
                     } == true
                     NavigationBarItem(
                         selected = selected,
-                        onClick = {
-                            navController.navigate(destination.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        onClick = { navController.navigateToTopLevel(destination.route) },
                         icon = { Icon(destination.icon, contentDescription = destination.label) },
                         label = { Text(destination.label) },
                     )
@@ -75,12 +68,28 @@ fun DietTrackerApp() {
             modifier = Modifier.padding(innerPadding),
         ) {
             composable(TopLevelDestination.HOME.route) {
-                HomeScreen(onOpenSettings = { navController.navigate("settings") })
+                HomeScreen(
+                    onOpenSettings = { navController.navigate("settings") },
+                    onAddRecord = { navController.navigateToTopLevel(TopLevelDestination.RECORD.route) },
+                )
             }
-            composable(TopLevelDestination.RECORD.route) { RecordScreen() }
+            composable(TopLevelDestination.RECORD.route) {
+                RecordScreen(
+                    onNavigateHome = { navController.navigateToTopLevel(TopLevelDestination.HOME.route) },
+                )
+            }
             composable(TopLevelDestination.HISTORY.route) { HistoryScreen() }
             composable(TopLevelDestination.STATS.route) { StatsScreen() }
             composable("settings") { SettingsScreen(onBack = { navController.popBackStack() }) }
         }
+    }
+}
+
+/** 切换到顶层目的地（与底部导航一致的返回栈行为）。 */
+private fun NavHostController.navigateToTopLevel(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

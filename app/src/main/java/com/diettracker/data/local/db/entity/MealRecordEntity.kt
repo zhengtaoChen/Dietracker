@@ -14,6 +14,8 @@ import java.time.LocalTime
  *
  * 关键设计：
  * - [totalCaloriesOverride] 为空则取明细合计，二者互斥取一（PRD §13.2/13.3）。
+ * - [proteinOverride]/[carbsOverride]/[fatOverride] 为餐次级手动营养值（快速模式直接录入），
+ *   为空则取明细合计；与总热量一致，缺失 ≠ 0（PRD §13.4）。
  * - [status] 区分草稿与正式记录，草稿不参与统计（PRD §13.1）。
  * - 「记录完整度」是「按天」属性，已从本表拆出到 DayCompletenessEntity。
  */
@@ -31,6 +33,12 @@ data class MealRecordEntity(
     val note: String?,
     val photoUri: String?,
     val totalCaloriesOverride: Float?,
+    /** 手动覆盖蛋白质(g)，null = 用明细合计。 */
+    val proteinOverride: Float?,
+    /** 手动覆盖碳水化合物(g)，null = 用明细合计。 */
+    val carbsOverride: Float?,
+    /** 手动覆盖脂肪(g)，null = 用明细合计。 */
+    val fatOverride: Float?,
     val status: RecordStatus,
     val source: RecordSource,
     val createdAt: Long,

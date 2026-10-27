@@ -3,6 +3,7 @@ package com.diettracker.di
 import android.content.Context
 import androidx.room.Room
 import com.diettracker.data.local.db.AppDatabase
+import com.diettracker.data.local.db.Migrations
 import com.diettracker.data.local.db.dao.CalorieGoalDao
 import com.diettracker.data.local.db.dao.DayCompletenessDao
 import com.diettracker.data.local.db.dao.FavoriteMealDao
@@ -29,6 +30,7 @@ object DatabaseModule {
         callback: FoodSeedCallback,
     ): AppDatabase = Room.databaseBuilder(context, AppDatabase::class.java, DATABASE_NAME)
         .addCallback(callback)
+        .addMigrations(Migrations.MIGRATION_1_2)
         .build()
 
     @Provides

@@ -31,6 +31,39 @@ object NutritionCalculator {
         return items.all { it.calories != null }
     }
 
+    /** 单餐蛋白质：有手动覆盖值取覆盖值，否则取明细「已知蛋白质」合计。缺失返回 null（≠0）。 */
+    fun mealProtein(meal: MealRecordEntity, items: List<FoodItemEntity>): Float? {
+        meal.proteinOverride?.let { return it }
+        val known = items.mapNotNull { it.protein }
+        return if (known.isEmpty()) null else known.sum()
+    }
+
+    /** 单餐碳水化合物：有手动覆盖值取覆盖值，否则取明细合计。 */
+    fun mealCarbs(meal: MealRecordEntity, items: List<FoodItemEntity>): Float? {
+        meal.carbsOverride?.let { return it }
+        val known = items.mapNotNull { it.carbs }
+        return if (known.isEmpty()) null else known.sum()
+    }
+
+    /** 单餐脂肪：有手动覆盖值取覆盖值，否则取明细合计。 */
+    fun mealFat(meal: MealRecordEntity, items: List<FoodItemEntity>): Float? {
+        meal.fatOverride?.let { return it }
+        val known = items.mapNotNull { it.fat }
+        return if (known.isEmpty()) null else known.sum()
+    }
+
+    /**
+     * 单餐三大营养素是否完整：三项覆盖值齐备，或明细全部条目三项均已知。
+     * 若仅部分覆盖或部分已知，视为不完整（缺失 ≠ 0）。
+     */
+    fun isMealMacrosComplete(meal: MealRecordEntity, items: List<FoodItemEntity>): Boolean {
+        if (meal.proteinOverride != null && meal.carbsOverride != null && meal.fatOverride != null) return true
+        if (meal.proteinOverride != null || meal.carbsOverride != null || meal.fatOverride != null) return false
+        return items.isNotEmpty() && items.all {
+            it.protein != null && it.carbs != null && it.fat != null
+        }
+    }
+
     /**
      * 汇总某一天的营养。入参应为「已保存（SAVED）」的餐次；草稿由调用方过滤。
      */
@@ -39,22 +72,29 @@ object NutritionCalculator {
             return NutritionSummary(null, null, null, null, false, false)
         }
 
-        val allItems = mealsWithItems.flatMap { it.items }
-
         val calories = mealsWithItems
             .mapNotNull { (meal, items) -> mealCalories(meal, items) }
             .takeIf { it.isNotEmpty() }
             ?.sum()
 
-        val protein = allItems.mapNotNull { it.protein }.takeIf { it.isNotEmpty() }?.sum()
-        val carbs = allItems.mapNotNull { it.carbs }.takeIf { it.isNotEmpty() }?.sum()
-        val fat = allItems.mapNotNull { it.fat }.takeIf { it.isNotEmpty() }?.sum()
+        val protein = mealsWithItems
+            .mapNotNull { (meal, items) -> mealProtein(meal, items) }
+            .takeIf { it.isNotEmpty() }
+            ?.sum()
+        val carbs = mealsWithItems
+            .mapNotNull { (meal, items) -> mealCarbs(meal, items) }
+            .takeIf { it.isNotEmpty() }
+            ?.sum()
+        val fat = mealsWithItems
+            .mapNotNull { (meal, items) -> mealFat(meal, items) }
+            .takeIf { it.isNotEmpty() }
+            ?.sum()
 
         val isCaloriesComplete = mealsWithItems.all { (meal, items) ->
             isMealCaloriesComplete(meal, items)
         }
-        val isMacrosComplete = allItems.isNotEmpty() && allItems.all {
-            it.protein != null && it.carbs != null && it.fat != null
+        val isMacrosComplete = mealsWithItems.all { (meal, items) ->
+            isMealMacrosComplete(meal, items)
         }
 
         return NutritionSummary(

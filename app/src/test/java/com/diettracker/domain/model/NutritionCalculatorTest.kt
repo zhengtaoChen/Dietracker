@@ -106,6 +106,42 @@ class NutritionCalculatorTest {
         assertFalse(summary.isMacrosComplete)
     }
 
+    // ---- 餐次级手动营养覆盖（快速模式，PRD §4.2）----
+
+    @Test
+    fun `餐次级蛋白质覆盖优先于明细合计`() {
+        val meal = meal(proteinOverride = 50f)
+        val items = listOf(item(calories = 100f, protein = 20f, carbs = 30f, fat = 10f))
+        val summary = NutritionCalculator.dailySummary(listOf(MealRecordWithItems(meal, items)))
+        assertEquals(50f, summary.protein)
+    }
+
+    @Test
+    fun `快速模式无明细时餐次级营养正确汇总`() {
+        val meal = meal(
+            totalCaloriesOverride = 850f,
+            proteinOverride = 40f,
+            carbsOverride = 100f,
+            fatOverride = 30f,
+        )
+        val summary = NutritionCalculator.dailySummary(listOf(MealRecordWithItems(meal, emptyList())))
+        assertEquals(850f, summary.calories)
+        assertEquals(40f, summary.protein)
+        assertEquals(100f, summary.carbs)
+        assertEquals(30f, summary.fat)
+        assertTrue(summary.isMacrosComplete)
+    }
+
+    @Test
+    fun `快速模式缺失餐次级营养不视为0`() {
+        val meal = meal(totalCaloriesOverride = 850f, proteinOverride = 40f)
+        val summary = NutritionCalculator.dailySummary(listOf(MealRecordWithItems(meal, emptyList())))
+        assertEquals(40f, summary.protein)
+        assertNull(summary.carbs)
+        assertNull(summary.fat)
+        assertFalse(summary.isMacrosComplete)
+    }
+
     // ---- computeFromFood：按克折算 ----
 
     @Test
@@ -139,6 +175,9 @@ class NutritionCalculatorTest {
     private fun meal(
         id: String = UUID.randomUUID().toString(),
         totalCaloriesOverride: Float? = null,
+        proteinOverride: Float? = null,
+        carbsOverride: Float? = null,
+        fatOverride: Float? = null,
     ): MealRecordEntity = MealRecordEntity(
         id = id,
         date = LocalDate.of(2026, 1, 1),
@@ -148,6 +187,9 @@ class NutritionCalculatorTest {
         note = null,
         photoUri = null,
         totalCaloriesOverride = totalCaloriesOverride,
+        proteinOverride = proteinOverride,
+        carbsOverride = carbsOverride,
+        fatOverride = fatOverride,
         status = RecordStatus.SAVED,
         source = RecordSource.MANUAL_QUICK,
         createdAt = 0L,

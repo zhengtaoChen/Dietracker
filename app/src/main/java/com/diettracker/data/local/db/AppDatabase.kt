@@ -28,7 +28,7 @@ import com.diettracker.data.local.db.entity.WeightRecordEntity
         FavoriteMealEntity::class,
         DayCompletenessEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
