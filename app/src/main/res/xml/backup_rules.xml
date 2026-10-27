@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 及以下（API < 31）的自动备份规则。
+     仅排除使用 Android Keystore 加密的安全偏好（API Key 存储，阶段 3 实现）。
+     Keystore 密钥无法随备份迁移到新设备，若被备份会导致恢复后无法解密。 -->
+<full-backup-content>
+    <exclude
+        domain="sharedpref"
+        path="secure_api_config.xml" />
+</full-backup-content>
