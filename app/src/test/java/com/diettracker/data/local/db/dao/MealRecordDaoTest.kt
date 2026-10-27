@@ -91,10 +91,45 @@ class MealRecordDaoTest {
         assertEquals(MealType.LUNCH, lunch?.mealType)
     }
 
+    @Test
+    fun `observeDrafts 仅返回草稿且按更新时间倒序`() = runBlocking {
+        dao.upsert(meal(status = RecordStatus.SAVED))
+        dao.upsert(meal(id = "older", status = RecordStatus.DRAFT, updatedAt = 100L))
+        dao.upsert(meal(id = "newer", status = RecordStatus.DRAFT, updatedAt = 200L))
+
+        val drafts = dao.observeDrafts().first()
+        assertEquals(listOf("newer", "older"), drafts.map { it.id })
+    }
+
+    @Test
+    fun `草稿转正式复用同一 id 不产生重复`() = runBlocking {
+        val id = "reuse-id"
+        dao.upsert(meal(id = id, status = RecordStatus.DRAFT, updatedAt = 100L))
+
+        // 模拟转正式：同 id 以 SAVED 状态 upsert。
+        dao.upsert(meal(id = id, status = RecordStatus.SAVED, updatedAt = 200L))
+
+        assertEquals(1, dao.observeAllByDate(date).first().size)
+        assertEquals(RecordStatus.SAVED, dao.getById(id)?.status)
+    }
+
+    @Test
+    fun `删除草稿不影响其他记录`() = runBlocking {
+        dao.upsert(meal(id = "draft", status = RecordStatus.DRAFT))
+        dao.upsert(meal(id = "saved", status = RecordStatus.SAVED))
+
+        dao.deleteById("draft")
+
+        assertNull(dao.getById("draft"))
+        assertNotNull(dao.getById("saved"))
+        assertEquals(1, dao.observeAllByDate(date).first().size)
+    }
+
     private fun meal(
         id: String = UUID.randomUUID().toString(),
         mealType: MealType = MealType.LUNCH,
         status: RecordStatus = RecordStatus.SAVED,
+        updatedAt: Long = 0L,
     ): MealRecordEntity = MealRecordEntity(
         id = id,
         date = date,
@@ -110,6 +145,6 @@ class MealRecordDaoTest {
         status = status,
         source = RecordSource.MANUAL_QUICK,
         createdAt = 0L,
-        updatedAt = 0L,
+        updatedAt = updatedAt,
     )
 }

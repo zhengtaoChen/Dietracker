@@ -12,9 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
@@ -27,9 +29,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -46,9 +45,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.diettracker.data.local.db.entity.MealRecordEntity
 import com.diettracker.domain.model.MealType
 import com.diettracker.ui.util.Formatters
 import java.time.Instant
@@ -60,93 +59,134 @@ import java.time.ZoneOffset
 @Composable
 fun RecordScreen(
     onNavigateHome: () -> Unit = {},
+    onShowMessage: (String) -> Unit = {},
+    onDirtyChange: (Boolean) -> Unit = {},
+    pendingNavigation: String? = null,
+    onDiscardResolved: (Boolean) -> Unit = {},
     viewModel: RecordViewModel = hiltViewModel(),
 ) {
     val step by viewModel.step.collectAsStateWithLifecycle()
     val form by viewModel.form.collectAsStateWithLifecycle()
     val formError by viewModel.formError.collectAsStateWithLifecycle()
     val isSaving by viewModel.isSaving.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
+    val isDirty by viewModel.isDirty.collectAsStateWithLifecycle()
+    val drafts by viewModel.drafts.collectAsStateWithLifecycle()
+
     var showDiscardDialog by remember { mutableStateOf(false) }
+    var draftPendingDelete by remember { mutableStateOf<MealRecordEntity?>(null) }
+
+    // 向上层报告是否有未保存修改，供底部导航守卫使用。
+    LaunchedEffect(isDirty) { onDirtyChange(isDirty) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is RecordEvent.Saved -> {
-                    snackbarHostState.showSnackbar("已保存")
                     onNavigateHome()
+                    onShowMessage("已保存")
                 }
-                is RecordEvent.DraftSaved -> snackbarHostState.showSnackbar("草稿已保存")
-                is RecordEvent.Error -> snackbarHostState.showSnackbar(event.message)
+                is RecordEvent.DraftSaved -> onShowMessage("草稿已保存")
+                is RecordEvent.Error -> onShowMessage(event.message)
             }
         }
     }
 
-    BackHandler(enabled = step == RecordViewModel.Step.FORM) {
-        if (form.hasContent) showDiscardDialog = true else viewModel.backToEntries()
-    }
-    BackHandler(enabled = step == RecordViewModel.Step.CONFIRM) {
-        viewModel.backToForm()
+    // 三种返回方式（顶部返回 / 系统返回 / 底部导航）统一走放弃确认。
+    val requestLeave = {
+        if (isDirty) showDiscardDialog = true else viewModel.backToEntries()
     }
 
-    Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            when (step) {
-                RecordViewModel.Step.ENTRIES -> RecordEntries(onTextClick = viewModel::openForm)
-                RecordViewModel.Step.FORM -> QuickRecordForm(
-                    form = form,
-                    error = formError,
-                    onNameChange = viewModel::onNameChange,
-                    onCaloriesChange = viewModel::onCaloriesChange,
-                    onProteinChange = viewModel::onProteinChange,
-                    onCarbsChange = viewModel::onCarbsChange,
-                    onFatChange = viewModel::onFatChange,
-                    onNoteChange = viewModel::onNoteChange,
-                    onDateChange = viewModel::onDateChange,
-                    onTimeChange = viewModel::onTimeChange,
-                    onMealTypeChange = viewModel::onMealTypeChange,
-                    onBack = viewModel::backToEntries,
-                    onProceed = viewModel::proceedToConfirm,
-                    onSaveDraft = viewModel::saveDraft,
-                )
-                RecordViewModel.Step.CONFIRM -> ConfirmRecord(
-                    form = form,
-                    isSaving = isSaving,
-                    onBack = viewModel::backToForm,
-                    onSave = viewModel::save,
-                    onSaveDraft = viewModel::saveDraft,
-                )
-            }
+    BackHandler(enabled = step == RecordViewModel.Step.FORM) { requestLeave() }
+    BackHandler(enabled = step == RecordViewModel.Step.CONFIRM) { viewModel.backToForm() }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (step) {
+            RecordViewModel.Step.ENTRIES -> RecordEntries(
+                drafts = drafts,
+                onTextClick = viewModel::openForm,
+                onDraftClick = viewModel::openDraft,
+                onDraftDelete = { draftPendingDelete = it },
+            )
+            RecordViewModel.Step.FORM -> QuickRecordForm(
+                form = form,
+                error = formError,
+                onNameChange = viewModel::onNameChange,
+                onCaloriesChange = viewModel::onCaloriesChange,
+                onProteinChange = viewModel::onProteinChange,
+                onCarbsChange = viewModel::onCarbsChange,
+                onFatChange = viewModel::onFatChange,
+                onNoteChange = viewModel::onNoteChange,
+                onDateChange = viewModel::onDateChange,
+                onTimeChange = viewModel::onTimeChange,
+                onMealTypeChange = viewModel::onMealTypeChange,
+                onBack = requestLeave,
+                onProceed = viewModel::proceedToConfirm,
+                onSaveDraft = viewModel::saveDraft,
+            )
+            RecordViewModel.Step.CONFIRM -> ConfirmRecord(
+                form = form,
+                isSaving = isSaving,
+                onBack = viewModel::backToForm,
+                onSave = viewModel::save,
+                onSaveDraft = viewModel::saveDraft,
+            )
         }
     }
 
-    if (showDiscardDialog) {
+    val discardVisible = showDiscardDialog || pendingNavigation != null
+    if (discardVisible) {
         AlertDialog(
-            onDismissRequest = { showDiscardDialog = false },
+            onDismissRequest = {
+                showDiscardDialog = false
+                if (pendingNavigation != null) onDiscardResolved(false)
+            },
             title = { Text("放弃修改？") },
             text = { Text("当前填写的内容尚未保存，离开后将丢失。") },
             confirmButton = {
                 TextButton(onClick = {
                     showDiscardDialog = false
                     viewModel.backToEntries()
+                    if (pendingNavigation != null) onDiscardResolved(true)
                 }) { Text("放弃") }
             },
             dismissButton = {
-                TextButton(onClick = { showDiscardDialog = false }) { Text("继续编辑") }
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    if (pendingNavigation != null) onDiscardResolved(false)
+                }) { Text("继续编辑") }
+            },
+        )
+    }
+
+    draftPendingDelete?.let { draft ->
+        AlertDialog(
+            onDismissRequest = { draftPendingDelete = null },
+            title = { Text("删除草稿？") },
+            text = { Text("删除后无法恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    draftPendingDelete = null
+                    viewModel.deleteDraft(draft.id)
+                }) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { draftPendingDelete = null }) { Text("取消") }
             },
         )
     }
 }
 
 @Composable
-private fun RecordEntries(onTextClick: () -> Unit) {
+private fun RecordEntries(
+    drafts: List<MealRecordEntity>,
+    onTextClick: () -> Unit,
+    onDraftClick: (String) -> Unit,
+    onDraftDelete: (MealRecordEntity) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
         Text("记录饮食", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -178,6 +218,70 @@ private fun RecordEntries(onTextClick: () -> Unit) {
             enabled = false,
             onClick = {},
         )
+
+        if (drafts.isNotEmpty()) {
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "未完成草稿（${drafts.size}）",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(8.dp))
+            drafts.forEach { draft ->
+                DraftListItem(
+                    draft = draft,
+                    onClick = { onDraftClick(draft.id) },
+                    onDelete = { onDraftDelete(draft) },
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DraftListItem(
+    draft: MealRecordEntity,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = draft.name ?: Formatters.mealTypeLabel(draft.mealType),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = listOfNotNull(
+                        Formatters.formatDate(draft.date),
+                        Formatters.mealTypeLabel(draft.mealType),
+                        Formatters.formatUpdatedAt(draft.updatedAt),
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = Formatters.formatKcal(draft.totalCaloriesOverride),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Filled.Delete, contentDescription = "删除草稿")
+            }
+        }
     }
 }
 
@@ -428,7 +532,7 @@ private fun ConfirmRecord(
                 onClick = onSave,
                 enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("保存") }
+            ) { Text(if (isSaving) "保存中…" else "保存") }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = onSaveDraft,

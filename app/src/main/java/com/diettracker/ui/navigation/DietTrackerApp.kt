@@ -10,9 +10,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -27,6 +33,7 @@ import com.diettracker.ui.feature.home.HomeScreen
 import com.diettracker.ui.feature.record.RecordScreen
 import com.diettracker.ui.feature.settings.SettingsScreen
 import com.diettracker.ui.feature.stats.StatsScreen
+import kotlinx.coroutines.launch
 
 enum class TopLevelDestination(
     val route: String,
@@ -42,10 +49,17 @@ enum class TopLevelDestination(
 @Composable
 fun DietTrackerApp() {
     val navController = rememberNavController()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
+    // 记录页未保存修改守卫：底部导航切换前询问是否放弃。
+    var recordDirty by remember { mutableStateOf(false) }
+    var pendingNavigation by remember { mutableStateOf<String?>(null) }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             NavigationBar {
                 TopLevelDestination.entries.forEach { destination ->
@@ -54,7 +68,16 @@ fun DietTrackerApp() {
                     } == true
                     NavigationBarItem(
                         selected = selected,
-                        onClick = { navController.navigateToTopLevel(destination.route) },
+                        onClick = {
+                            val leavingRecord =
+                                currentDestination?.route == TopLevelDestination.RECORD.route &&
+                                    destination.route != TopLevelDestination.RECORD.route
+                            if (leavingRecord && recordDirty) {
+                                pendingNavigation = destination.route
+                            } else {
+                                navController.navigateToTopLevel(destination.route)
+                            }
+                        },
                         icon = { Icon(destination.icon, contentDescription = destination.label) },
                         label = { Text(destination.label) },
                     )
@@ -76,6 +99,17 @@ fun DietTrackerApp() {
             composable(TopLevelDestination.RECORD.route) {
                 RecordScreen(
                     onNavigateHome = { navController.navigateToTopLevel(TopLevelDestination.HOME.route) },
+                    onShowMessage = { message -> scope.launch { snackbarHostState.showSnackbar(message) } },
+                    onDirtyChange = { recordDirty = it },
+                    pendingNavigation = pendingNavigation,
+                    onDiscardResolved = { discard ->
+                        val target = pendingNavigation
+                        pendingNavigation = null
+                        if (discard) {
+                            recordDirty = false
+                            if (target != null) navController.navigateToTopLevel(target)
+                        }
+                    },
                 )
             }
             composable(TopLevelDestination.HISTORY.route) { HistoryScreen() }

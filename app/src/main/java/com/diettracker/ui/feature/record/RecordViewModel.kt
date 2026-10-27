@@ -15,9 +15,11 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 private fun parseNonNegative(value: String): Float? =
@@ -25,6 +27,9 @@ private fun parseNonNegative(value: String): Float? =
 
 private fun parsePositive(value: String): Float? =
     value.trim().toFloatOrNull()?.takeIf { it > 0f }
+
+private fun Float.toInputString(): String =
+    if (this % 1f == 0f) toInt().toString() else toString()
 
 /** 快速录入表单状态。数值字段以原始文本保存，校验时再解析，便于输入框绑定。 */
 data class MealFormState(
@@ -38,7 +43,7 @@ data class MealFormState(
     val mealType: MealType = MealType.LUNCH,
     val note: String = "",
 ) {
-    /** 是否有任何已填内容（用于退出保护与草稿门槛）。 */
+    /** 是否有任何已填内容（用于草稿门槛）。 */
     val hasContent: Boolean
         get() = listOf(name, calories, protein, carbs, fat, note).any { it.isNotBlank() }
 
@@ -81,17 +86,62 @@ class RecordViewModel @Inject constructor(
     private val _isSaving = MutableStateFlow(false)
     val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
 
+    /** 当前表单相对打开时是否有未保存的修改（用于退出保护，区别于 hasContent）。 */
+    private val _isDirty = MutableStateFlow(false)
+    val isDirty: StateFlow<Boolean> = _isDirty.asStateFlow()
+
     private val _events = MutableSharedFlow<RecordEvent>()
     val events: SharedFlow<RecordEvent> = _events.asSharedFlow()
+
+    /** 未完成草稿（真实 Room 数据，按更新时间倒序）。 */
+    val drafts: StateFlow<List<MealRecordEntity>> = mealRepository
+        .observeDrafts()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** 正在编辑的既有记录（草稿）的 UUID；null 表示新建记录。 */
+    private var editingId: String? = null
+
+    /** 正在编辑记录的原始 createdAt，正式保存/重存时保留。 */
+    private var editingCreatedAt: Long? = null
 
     fun openForm() {
         _form.value = MealFormState()
         _formError.value = null
+        _isDirty.value = false
+        editingId = null
+        editingCreatedAt = null
         _step.value = Step.FORM
     }
 
+    fun openDraft(id: String) {
+        viewModelScope.launch {
+            val entity = mealRepository.getMeal(id) ?: return@launch
+            editingId = id
+            editingCreatedAt = entity.createdAt
+            _form.value = entity.toFormState()
+            _formError.value = null
+            _isDirty.value = false
+            _step.value = Step.FORM
+        }
+    }
+
+    fun deleteDraft(id: String) {
+        viewModelScope.launch {
+            try {
+                mealRepository.deleteMeal(id)
+            } catch (e: Exception) {
+                _events.tryEmit(RecordEvent.Error("删除草稿失败：${e.message ?: "未知错误"}"))
+            }
+        }
+    }
+
+    /** 放弃当前编辑并回到入口页（清空表单，避免残留内容）。 */
     fun backToEntries() {
+        _form.value = MealFormState()
         _formError.value = null
+        _isDirty.value = false
+        editingId = null
+        editingCreatedAt = null
         _step.value = Step.ENTRIES
     }
 
@@ -125,18 +175,20 @@ class RecordViewModel @Inject constructor(
     private fun update(transform: (MealFormState) -> MealFormState) {
         _form.value = transform(_form.value)
         _formError.value = null
+        _isDirty.value = true
     }
 
     fun save() {
+        if (_isSaving.value) return
         val entity = buildEntity(RecordStatus.SAVED) ?: return
         _isSaving.value = true
         viewModelScope.launch {
             try {
                 mealRepository.saveMeal(entity, emptyList())
-                _events.emit(RecordEvent.Saved)
                 resetAfterSave()
+                _events.tryEmit(RecordEvent.Saved)
             } catch (e: Exception) {
-                _events.emit(RecordEvent.Error("保存失败：${e.message ?: "未知错误"}"))
+                _events.tryEmit(RecordEvent.Error("保存失败：${e.message ?: "未知错误"}"))
             } finally {
                 _isSaving.value = false
             }
@@ -144,16 +196,17 @@ class RecordViewModel @Inject constructor(
     }
 
     fun saveDraft() {
+        if (_isSaving.value) return
         if (!_form.value.hasContent) return
         val entity = buildEntity(RecordStatus.DRAFT) ?: return
         _isSaving.value = true
         viewModelScope.launch {
             try {
                 mealRepository.saveMeal(entity, emptyList())
-                _events.emit(RecordEvent.DraftSaved)
                 resetAfterSave()
+                _events.tryEmit(RecordEvent.DraftSaved)
             } catch (e: Exception) {
-                _events.emit(RecordEvent.Error("保存草稿失败：${e.message ?: "未知错误"}"))
+                _events.tryEmit(RecordEvent.Error("保存草稿失败：${e.message ?: "未知错误"}"))
             } finally {
                 _isSaving.value = false
             }
@@ -163,8 +216,23 @@ class RecordViewModel @Inject constructor(
     private fun resetAfterSave() {
         _form.value = MealFormState()
         _formError.value = null
+        _isDirty.value = false
+        editingId = null
+        editingCreatedAt = null
         _step.value = Step.ENTRIES
     }
+
+    private fun MealRecordEntity.toFormState(): MealFormState = MealFormState(
+        name = name.orEmpty(),
+        calories = totalCaloriesOverride?.toInputString().orEmpty(),
+        protein = proteinOverride?.toInputString().orEmpty(),
+        carbs = carbsOverride?.toInputString().orEmpty(),
+        fat = fatOverride?.toInputString().orEmpty(),
+        date = date,
+        time = time ?: LocalTime.now(),
+        mealType = mealType,
+        note = note.orEmpty(),
+    )
 
     private fun buildEntity(status: RecordStatus): MealRecordEntity? {
         val state = _form.value
@@ -174,7 +242,7 @@ class RecordViewModel @Inject constructor(
 
         val now = System.currentTimeMillis()
         return MealRecordEntity(
-            id = UUID.randomUUID().toString(),
+            id = editingId ?: UUID.randomUUID().toString(),
             date = state.date,
             mealType = state.mealType,
             name = name,
@@ -187,7 +255,7 @@ class RecordViewModel @Inject constructor(
             fatOverride = parseNonNegative(state.fat),
             status = status,
             source = RecordSource.MANUAL_QUICK,
-            createdAt = now,
+            createdAt = editingCreatedAt ?: now,
             updatedAt = now,
         )
     }
