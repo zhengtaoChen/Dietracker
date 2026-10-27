@@ -228,7 +228,7 @@ class RecordViewModel @Inject constructor(
         _step.value = Step.FORM
     }
 
-    fun openDraft(id: String) {
+    fun openMeal(id: String) {
         viewModelScope.launch {
             val withItems = mealRepository.getMealWithItems(id) ?: return@launch
             val entity = withItems.meal

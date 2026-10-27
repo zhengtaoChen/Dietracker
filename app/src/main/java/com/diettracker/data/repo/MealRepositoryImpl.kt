@@ -52,7 +52,10 @@ class MealRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteMeal(id: String) {
-        mealRecordDao.deleteById(id)
+        database.withTransaction {
+            foodItemDao.deleteByMeal(id)
+            mealRecordDao.deleteById(id)
+        }
     }
 
     override suspend fun hasSavedMeal(date: LocalDate, mealType: MealType): Boolean =

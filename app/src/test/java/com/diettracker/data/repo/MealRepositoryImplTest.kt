@@ -107,6 +107,21 @@ class MealRepositoryImplTest {
         assertEquals(1, savedItem?.foodDbVersion)
     }
 
+    @Test
+    fun `删除餐次连带删除明细且不影响其他餐次`() = runBlocking {
+        val mealA = meal(status = RecordStatus.SAVED, override = null)
+        val mealB = meal(status = RecordStatus.SAVED, override = null)
+        repo.saveMeal(mealA, listOf(item(mealA.id, calories = 100f), item(mealA.id, calories = 200f)))
+        repo.saveMeal(mealB, listOf(item(mealB.id, calories = 300f)))
+
+        repo.deleteMeal(mealA.id)
+
+        assertNull(repo.getMealWithItems(mealA.id))
+        assertTrue(db.foodItemDao().getByMeal(mealA.id).isEmpty())
+        assertEquals(1, db.foodItemDao().getByMeal(mealB.id).size)
+        assertEquals(300f, repo.getMealWithItems(mealB.id)?.items?.firstOrNull()?.calories)
+    }
+
     private fun meal(status: RecordStatus, override: Float?): MealRecordEntity =
         MealRecordEntity(
             id = UUID.randomUUID().toString(),

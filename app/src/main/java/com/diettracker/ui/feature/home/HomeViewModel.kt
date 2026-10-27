@@ -8,13 +8,17 @@ import com.diettracker.domain.repository.MealRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.LocalDate
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    mealRepository: MealRepository,
+    private val mealRepository: MealRepository,
 ) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
@@ -29,5 +33,18 @@ class HomeViewModel @Inject constructor(
         .observeNutritionSummary(today)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    private val _messages = MutableSharedFlow<String>()
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
+
     val date: LocalDate get() = today
+
+    fun deleteMeal(id: String) {
+        viewModelScope.launch {
+            try {
+                mealRepository.deleteMeal(id)
+            } catch (e: Exception) {
+                _messages.emit("删除失败：${e.message ?: "未知错误"}")
+            }
+        }
+    }
 }

@@ -57,6 +57,7 @@ fun DietTrackerApp() {
     // 记录页未保存修改守卫：底部导航切换前询问是否放弃。
     var recordDirty by remember { mutableStateOf(false) }
     var pendingNavigation by remember { mutableStateOf<String?>(null) }
+    var editMealId by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -94,6 +95,11 @@ fun DietTrackerApp() {
                 HomeScreen(
                     onOpenSettings = { navController.navigate("settings") },
                     onAddRecord = { navController.navigateToTopLevel(TopLevelDestination.RECORD.route) },
+                    onEditMeal = { id ->
+                        editMealId = id
+                        navController.navigateToTopLevel(TopLevelDestination.RECORD.route)
+                    },
+                    onShowMessage = { message -> scope.launch { snackbarHostState.showSnackbar(message) } },
                 )
             }
             composable(TopLevelDestination.RECORD.route) {
@@ -110,6 +116,8 @@ fun DietTrackerApp() {
                             if (target != null) navController.navigateToTopLevel(target)
                         }
                     },
+                    editMealId = editMealId,
+                    onEditMealHandled = { editMealId = null },
                 )
             }
             composable(TopLevelDestination.HISTORY.route) { HistoryScreen() }

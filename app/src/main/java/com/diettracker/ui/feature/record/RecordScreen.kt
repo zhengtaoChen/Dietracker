@@ -70,6 +70,8 @@ fun RecordScreen(
     onDirtyChange: (Boolean) -> Unit = {},
     pendingNavigation: String? = null,
     onDiscardResolved: (Boolean) -> Unit = {},
+    editMealId: String? = null,
+    onEditMealHandled: () -> Unit = {},
     viewModel: RecordViewModel = hiltViewModel(),
 ) {
     val step by viewModel.step.collectAsStateWithLifecycle()
@@ -92,6 +94,13 @@ fun RecordScreen(
     var draftPendingDelete by remember { mutableStateOf<MealRecordEntity?>(null) }
 
     LaunchedEffect(isDirty) { onDirtyChange(isDirty) }
+
+    LaunchedEffect(editMealId) {
+        editMealId?.let {
+            viewModel.openMeal(it)
+            onEditMealHandled()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -121,7 +130,7 @@ fun RecordScreen(
             RecordViewModel.Step.ENTRIES -> RecordEntries(
                 drafts = drafts,
                 onTextClick = { showModeDialog = true },
-                onDraftClick = viewModel::openDraft,
+                onDraftClick = viewModel::openMeal,
                 onDraftDelete = { draftPendingDelete = it },
             )
             RecordViewModel.Step.FORM -> if (mode == RecordViewModel.InputMode.QUICK) {

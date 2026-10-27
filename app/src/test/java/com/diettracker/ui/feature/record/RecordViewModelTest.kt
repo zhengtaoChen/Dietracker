@@ -62,7 +62,7 @@ class RecordViewModelTest {
         }
         val vm = RecordViewModel(repo, FakeFoodRepository())
 
-        vm.openDraft("d1")
+        vm.openMeal("d1")
 
         assertEquals("牛肉面", vm.form.value.name)
         assertEquals("850", vm.form.value.calories)
@@ -94,7 +94,7 @@ class RecordViewModelTest {
             meals["d1"] = entity(id = "d1", name = "午餐", calories = 850f, status = RecordStatus.DRAFT, createdAt = 100L)
         }
         val vm = RecordViewModel(repo, FakeFoodRepository())
-        vm.openDraft("d1")
+        vm.openMeal("d1")
         vm.onCaloriesChange("900")
 
         vm.save()
@@ -114,7 +114,7 @@ class RecordViewModelTest {
             meals["d1"] = entity(id = "d1", name = "午餐", calories = null, status = RecordStatus.DRAFT, createdAt = 100L)
         }
         val vm = RecordViewModel(repo, FakeFoodRepository())
-        vm.openDraft("d1")
+        vm.openMeal("d1")
         vm.onNoteChange("加辣")
 
         vm.saveDraft()
@@ -276,7 +276,7 @@ class RecordViewModelTest {
         }
         val vm = RecordViewModel(repo, FakeFoodRepository())
 
-        vm.openDraft("d1")
+        vm.openMeal("d1")
 
         assertEquals(RecordViewModel.InputMode.DETAIL, vm.mode.value)
         assertEquals(1, vm.form.value.items.size)
@@ -307,6 +307,82 @@ class RecordViewModelTest {
 
         assertNotNull(vm.editorError.value)
         assertEquals(0, vm.form.value.items.size)
+    }
+
+    // ---- 阶段 2B 修复：编辑已保存餐次 ----
+
+    @Test
+    fun `编辑已保存餐次复用UUID并保留createdAt`() = runTest {
+        val repo = FakeMealRepository().apply {
+            meals["m1"] = entity(id = "m1", name = "午餐", calories = 850f, status = RecordStatus.SAVED, createdAt = 100L)
+        }
+        val vm = RecordViewModel(repo, FakeFoodRepository())
+        vm.openMeal("m1")
+        vm.onCaloriesChange("750")
+
+        vm.save()
+
+        assertEquals(1, repo.meals.size)
+        val saved = repo.meals["m1"]!!
+        assertEquals("m1", saved.id)
+        assertEquals(RecordStatus.SAVED, saved.status)
+        assertEquals(100L, saved.createdAt)
+        assertEquals(750f, saved.totalCaloriesOverride)
+        assertEquals(RecordViewModel.Step.ENTRIES, vm.step.value)
+    }
+
+    @Test
+    fun `编辑详细餐次修改食物重量后重算营养`() = runTest {
+        val foodRepo = FakeFoodRepository().apply {
+            foods["f1"] = food(id = "f1", name = "米饭", kcal = 130f, protein = 2.7f, carbs = 28.2f, fat = 0.3f, version = 1)
+        }
+        val repo = FakeMealRepository().apply {
+            meals["m1"] = entity(id = "m1", name = null, calories = null, status = RecordStatus.SAVED, createdAt = 100L)
+                .copy(source = RecordSource.MANUAL_DETAIL)
+            itemsByMeal["m1"] = listOf(
+                FoodItemEntity(
+                    id = "i1", mealRecordId = "m1", sortOrder = 0, name = "米饭",
+                    category = "主食", amount = 100f, amountUnit = "g",
+                    calories = 130f, protein = 2.7f, carbs = 28.2f, fat = 0.3f,
+                    source = FoodSource.LOCAL_DB, foodDbId = "f1", foodDbVersion = 1,
+                ),
+            )
+        }
+        val vm = RecordViewModel(repo, foodRepo)
+        vm.openMeal("m1")
+
+        assertEquals(RecordViewModel.InputMode.DETAIL, vm.mode.value)
+        assertEquals(130f, vm.detailSummary.value.calories!!, 0.001f)
+
+        vm.editItem(vm.form.value.items[0].key)
+        vm.onEditorGramsChange("200")
+        vm.addFoodItem()
+
+        assertEquals(260f, vm.detailSummary.value.calories!!, 0.001f)
+
+        vm.proceedToConfirm()
+        vm.save()
+
+        val savedItem = repo.itemsByMeal["m1"]!!.first()
+        assertEquals(260f, savedItem.calories!!, 0.001f)
+        assertEquals(5.4f, savedItem.protein!!, 0.001f)
+    }
+
+    @Test
+    fun `取消编辑不修改原数据`() = runTest {
+        val repo = FakeMealRepository().apply {
+            meals["m1"] = entity(id = "m1", name = "午餐", calories = 850f, status = RecordStatus.SAVED, createdAt = 100L)
+        }
+        val vm = RecordViewModel(repo, FakeFoodRepository())
+        vm.openMeal("m1")
+        vm.onCaloriesChange("999")
+
+        vm.backToEntries()
+
+        val unchanged = repo.meals["m1"]!!
+        assertEquals(850f, unchanged.totalCaloriesOverride)
+        assertEquals(100L, unchanged.createdAt)
+        assertEquals(RecordStatus.SAVED, unchanged.status)
     }
 
     // ---- 工厂 ----
