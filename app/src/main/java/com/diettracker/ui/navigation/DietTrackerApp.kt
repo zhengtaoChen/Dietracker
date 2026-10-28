@@ -28,6 +28,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.diettracker.ui.feature.ai.AiApiConfigScreen
 import com.diettracker.ui.feature.goal.GoalSetupScreen
 import com.diettracker.ui.feature.history.HistoryScreen
 import com.diettracker.ui.feature.home.HomeScreen
@@ -128,10 +129,14 @@ fun DietTrackerApp() {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onEditGoal = { navController.navigate("goal_setup") },
+                    onOpenAiConfig = { navController.navigate("ai_api_config") },
                 )
             }
             composable("goal_setup") {
                 GoalSetupScreen(onBack = { navController.popBackStack() })
+            }
+            composable("ai_api_config") {
+                AiApiConfigScreen(onBack = { navController.popBackStack() })
             }
         }
     }

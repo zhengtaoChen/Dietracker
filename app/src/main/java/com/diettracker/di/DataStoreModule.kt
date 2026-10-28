@@ -10,6 +10,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import javax.inject.Named
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,5 +28,16 @@ object DataStoreModule {
             migrations = emptyList(),
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
             produceFile = { context.preferencesDataStoreFile("user_settings") },
+        )
+
+    @Provides
+    @Singleton
+    @Named("ai_config")
+    fun provideAiConfigDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
+        PreferenceDataStoreFactory.create(
+            corruptionHandler = null,
+            migrations = emptyList(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            produceFile = { context.preferencesDataStoreFile("ai_config") },
         )
 }

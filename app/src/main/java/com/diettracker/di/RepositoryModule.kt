@@ -1,5 +1,9 @@
 package com.diettracker.di
 
+import com.diettracker.data.crypto.AndroidKeystoreApiKeyCrypto
+import com.diettracker.data.crypto.ApiKeyCrypto
+import com.diettracker.data.network.AiConnectionTesterImpl
+import com.diettracker.data.repo.AiApiConfigRepositoryImpl
 import com.diettracker.data.repo.DayCompletenessRepositoryImpl
 import com.diettracker.data.repo.FavoriteMealRepositoryImpl
 import com.diettracker.data.repo.FoodRepositoryImpl
@@ -8,6 +12,8 @@ import com.diettracker.data.repo.MealRepositoryImpl
 import com.diettracker.data.repo.PhotoRepositoryImpl
 import com.diettracker.data.repo.UserSettingsRepositoryImpl
 import com.diettracker.data.repo.WeightRepositoryImpl
+import com.diettracker.domain.repository.AiApiConfigRepository
+import com.diettracker.domain.repository.AiConnectionTester
 import com.diettracker.domain.repository.DayCompletenessRepository
 import com.diettracker.domain.repository.FavoriteMealRepository
 import com.diettracker.domain.repository.FoodRepository
@@ -48,4 +54,13 @@ abstract class RepositoryModule {
 
     @Binds
     abstract fun bindUserSettingsRepository(impl: UserSettingsRepositoryImpl): UserSettingsRepository
+
+    @Binds
+    abstract fun bindAiApiConfigRepository(impl: AiApiConfigRepositoryImpl): AiApiConfigRepository
+
+    @Binds
+    abstract fun bindAiConnectionTester(impl: AiConnectionTesterImpl): AiConnectionTester
+
+    @Binds
+    abstract fun bindApiKeyCrypto(impl: AndroidKeystoreApiKeyCrypto): ApiKeyCrypto
 }

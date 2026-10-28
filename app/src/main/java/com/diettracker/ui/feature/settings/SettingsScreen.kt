@@ -36,6 +36,7 @@ import com.diettracker.ui.util.Formatters
 fun SettingsScreen(
     onBack: () -> Unit = {},
     onEditGoal: () -> Unit = {},
+    onOpenAiConfig: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val goal by viewModel.goal.collectAsStateWithLifecycle()
@@ -89,6 +90,18 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     TextButton(onClick = onEditGoal) { Text("编辑") }
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+            SectionTitle("AI API 配置")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "配置文字/视觉模型与 API Key，用于后续 AI 识别（可选）。",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onOpenAiConfig) { Text("配置") }
                 }
             }
         }
