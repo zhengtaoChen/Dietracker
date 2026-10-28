@@ -59,6 +59,25 @@ enum class GoalType {
 }
 
 /**
+ * 生理性别（用于 Mifflin-St Jeor 基础代谢估算，PRD §7）。
+ */
+enum class Sex(val label: String) {
+    MALE("男"),
+    FEMALE("女"),
+}
+
+/**
+ * 活动水平及对应 TDEE 系数（PRD §7 自动估算用，仅作参考）。
+ */
+enum class ActivityLevel(val factor: Float, val label: String) {
+    SEDENTARY(1.2f, "久坐"),
+    LIGHT(1.375f, "轻度活动"),
+    MODERATE(1.55f, "中度活动"),
+    ACTIVE(1.725f, "高度活动"),
+    VERY_ACTIVE(1.9f, "极高活动"),
+}
+
+/**
  * 「某一天」的记录完整度状态（PRD §9 / §10.3）。
  * 完整度是「按天」的属性，独立于单条餐次记录，故单独成表。
  */

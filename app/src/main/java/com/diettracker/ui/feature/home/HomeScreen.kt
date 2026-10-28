@@ -25,6 +25,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -43,8 +44,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.diettracker.data.local.db.entity.CalorieGoalEntity
 import com.diettracker.data.local.db.entity.MealRecordEntity
 import com.diettracker.domain.model.NutritionSummary
+import com.diettracker.domain.model.computeHomeProgress
 import com.diettracker.ui.components.PhotoThumbnail
 import com.diettracker.ui.util.Formatters
 
@@ -54,11 +57,14 @@ fun HomeScreen(
     onOpenSettings: () -> Unit = {},
     onAddRecord: () -> Unit = {},
     onEditMeal: (String) -> Unit = {},
+    onOpenGoalSetup: () -> Unit = {},
     onShowMessage: (String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
+    val date by viewModel.date.collectAsStateWithLifecycle()
     val meals by viewModel.meals.collectAsStateWithLifecycle()
     val summary by viewModel.summary.collectAsStateWithLifecycle()
+    val goal by viewModel.goal.collectAsStateWithLifecycle()
 
     var mealPendingDelete by remember { mutableStateOf<MealRecordEntity?>(null) }
 
@@ -69,7 +75,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(Formatters.formatDate(viewModel.date)) },
+                title = { Text(Formatters.formatDate(date)) },
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Filled.Settings, contentDescription = "设置")
@@ -89,11 +95,16 @@ fun HomeScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp),
         ) {
+            Spacer(Modifier.height(8.dp))
+            SummaryHeader(
+                summary = summary,
+                goal = goal,
+                onOpenGoalSetup = onOpenGoalSetup,
+            )
+            Spacer(Modifier.height(16.dp))
             if (meals.isEmpty()) {
                 EmptyState(onAddRecord = onAddRecord)
             } else {
-                SummaryHeader(summary = summary)
-                Spacer(Modifier.height(16.dp))
                 Text("今日餐次", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -128,7 +139,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun SummaryHeader(summary: NutritionSummary?) {
+private fun SummaryHeader(
+    summary: NutritionSummary?,
+    goal: CalorieGoalEntity?,
+    onOpenGoalSetup: () -> Unit,
+) {
+    val progress = computeHomeProgress(summary, goal)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
@@ -137,11 +153,64 @@ private fun SummaryHeader(summary: NutritionSummary?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = Formatters.formatKcal(summary?.calories),
+                text = Formatters.formatKcal(progress.consumedCalories),
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
             )
+
+            Spacer(Modifier.height(12.dp))
+
+            if (goal == null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "未设置每日目标",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = onOpenGoalSetup) { Text("设置目标") }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "目标 ${Formatters.formatKcal(goal.calories)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    val remaining = progress.remainingCalories
+                    when {
+                        remaining == null -> Text("—", style = MaterialTheme.typography.bodyMedium)
+                        remaining < 0f -> Text(
+                            text = "超出 ${Formatters.formatKcal(-remaining)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        else -> Text(
+                            text = "剩余 ${Formatters.formatKcal(remaining)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { progress.progressFraction ?: 0f },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    color = if (progress.isOverGoal) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
+            }
+
             Spacer(Modifier.height(12.dp))
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))

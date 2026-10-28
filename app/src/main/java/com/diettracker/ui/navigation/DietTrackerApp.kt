@@ -28,6 +28,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.diettracker.ui.feature.goal.GoalSetupScreen
 import com.diettracker.ui.feature.history.HistoryScreen
 import com.diettracker.ui.feature.home.HomeScreen
 import com.diettracker.ui.feature.record.RecordScreen
@@ -99,6 +100,7 @@ fun DietTrackerApp() {
                         editMealId = id
                         navController.navigateToTopLevel(TopLevelDestination.RECORD.route)
                     },
+                    onOpenGoalSetup = { navController.navigate("goal_setup") },
                     onShowMessage = { message -> scope.launch { snackbarHostState.showSnackbar(message) } },
                 )
             }
@@ -122,7 +124,15 @@ fun DietTrackerApp() {
             }
             composable(TopLevelDestination.HISTORY.route) { HistoryScreen() }
             composable(TopLevelDestination.STATS.route) { StatsScreen() }
-            composable("settings") { SettingsScreen(onBack = { navController.popBackStack() }) }
+            composable("settings") {
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    onEditGoal = { navController.navigate("goal_setup") },
+                )
+            }
+            composable("goal_setup") {
+                GoalSetupScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
 }

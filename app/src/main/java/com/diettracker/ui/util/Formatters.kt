@@ -1,5 +1,6 @@
 package com.diettracker.ui.util
 
+import com.diettracker.domain.model.GoalType
 import com.diettracker.domain.model.MealType
 import java.time.Instant
 import java.time.LocalDate
@@ -28,6 +29,13 @@ object Formatters {
         MealType.LUNCH -> "午餐"
         MealType.DINNER -> "晚餐"
         MealType.SNACK -> "加餐"
+    }
+
+    fun goalTypeLabel(type: GoalType): String = when (type) {
+        GoalType.LOSE -> "减脂"
+        GoalType.MAINTAIN -> "维持"
+        GoalType.GAIN -> "增重"
+        GoalType.MANUAL -> "手动"
     }
 
     fun formatKcal(value: Float?): String = value?.let { "${formatNumber(it)} kcal" } ?: "—"

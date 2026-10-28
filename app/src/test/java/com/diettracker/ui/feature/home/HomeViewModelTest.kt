@@ -1,10 +1,13 @@
 package com.diettracker.ui.feature.home
 
+import com.diettracker.data.local.db.entity.CalorieGoalEntity
 import com.diettracker.data.local.db.entity.FoodItemEntity
 import com.diettracker.data.local.db.entity.MealRecordEntity
 import com.diettracker.data.local.db.entity.MealRecordWithItems
+import com.diettracker.domain.model.GoalType
 import com.diettracker.domain.model.MealType
 import com.diettracker.domain.model.NutritionSummary
+import com.diettracker.domain.repository.GoalRepository
 import com.diettracker.domain.repository.MealRepository
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +42,7 @@ class HomeViewModelTest {
     @Test
     fun `删除餐次调用仓库删除`() {
         val repo = FakeMealRepository()
-        val vm = HomeViewModel(repo)
+        val vm = HomeViewModel(repo, FakeGoalRepository())
 
         vm.deleteMeal("m1")
 
@@ -49,7 +52,7 @@ class HomeViewModelTest {
     @Test
     fun `删除失败发出错误消息`() {
         val repo = FakeMealRepository().apply { deleteError = RuntimeException("boom") }
-        val vm = HomeViewModel(repo)
+        val vm = HomeViewModel(repo, FakeGoalRepository())
         val messages = mutableListOf<String>()
         runBlocking {
             val job = launch(Dispatchers.Unconfined) { vm.messages.collect { messages += it } }
@@ -91,5 +94,22 @@ class HomeViewModelTest {
         override suspend fun deleteOrphanedPhotos(): Int = 0
 
         override suspend fun hasSavedMeal(date: LocalDate, mealType: MealType): Boolean = false
+    }
+
+    private class FakeGoalRepository : GoalRepository {
+        override fun observeEffectiveGoal(date: LocalDate): Flow<CalorieGoalEntity?> =
+            MutableStateFlow(null)
+
+        override fun observeAll(): Flow<List<CalorieGoalEntity>> =
+            MutableStateFlow(emptyList())
+
+        override suspend fun getEffectiveGoal(date: LocalDate): CalorieGoalEntity? = null
+
+        override suspend fun saveGoal(
+            date: LocalDate,
+            calories: Float,
+            goalType: GoalType,
+            estimateParams: String?,
+        ) = Unit
     }
 }
